@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from mamba_ssm import Mamba
 
 # an example use of Mamba
@@ -22,23 +23,32 @@ class PETRMamba:
         d_conv (int): Local convolution width
         expand (int): Block expansion factor
     """
-    def __init__(self, d_model, d_state, d_conv, expand, **kwargs):
+    def __init__(self, d_model, len_momery, len_query, d_state, d_conv, expand, diffrent_src=False, **kwargs):
         self.d_model = d_model
+        self.len_momery = len_momery
+        self.len_query = len_query
         self.d_state = d_state
         self.d_conv = d_conv
         self.expand = expand
+        self.diffrent_src = diffrent_src
         self.mamba = Mamba(d_model, d_state, d_conv, expand)
+        if self.diffrent_src:
+            self.proj = nn.Linear(len_momery, len_query)
         
-    def merge(self, memory, query, attn_mask=None, diffrent_src=True):
+    def merge(self, memory, query, attn_mask=None):
         # merge memory and query as one sequence
         ret = torch.empty_like(query)
+        if self.diffrent_src:
+            memory_proj = self.proj(memory.transpose(1,2))
+            ret = memory_proj.transpose(1,2) + query
+        else:
+            ret = memory + query
         return ret
-        
+
     def forward(self, 
                 memory, 
                 query,
-                attn_mask=None,
-                diffrent_src=True):
+                attn_mask=None):
         """Forward function for `PETRMamba`.
         Args:
             query (Tensor): [num_queries, bs, d_model] or [bs, num_queries, d_model]
@@ -50,5 +60,5 @@ class PETRMamba:
         Returns:
             Tensor: the same shape as query
         """
-        merged_sequence = self.merge(memory, query, attn_mask, diffrent_src)
+        merged_sequence = self.merge(memory, query, attn_mask)
         return self.mamba(merged_sequence)
